@@ -21,6 +21,7 @@ services:
       - PYTHONPATH=/workspace
     command: python3 train.py --config configs/base_config.yaml
     working_dir: /workspace
+    ipc: host
     stdin_open: true
     tty: true
     ports:
