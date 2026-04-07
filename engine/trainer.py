@@ -27,8 +27,8 @@ class Trainer:
         for inputs, targets in pbar:
             inputs, targets = inputs.to(self.device), targets.to(self.device)
 
-            self.optimizer.zero_grad()
-            
+            self.optimizer.zero_grad(set_to_none=True)
+
             if self.scaler is not None:
                 with torch.cuda.amp.autocast():
                     outputs = self.model(inputs)
@@ -67,8 +67,9 @@ class Trainer:
         for inputs, targets in pbar:
             inputs, targets = inputs.to(self.device), targets.to(self.device)
 
-            outputs = self.model(inputs)
-            loss = nn.CrossEntropyLoss()(outputs, targets)
+            with torch.cuda.amp.autocast(enabled=self.scaler is not None):
+                outputs = self.model(inputs)
+                loss = self.criterion(outputs, targets)
 
             acc1, acc5 = accuracy(outputs, targets, topk=(1, 5))
             losses.update(loss.item(), inputs.size(0))

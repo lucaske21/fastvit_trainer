@@ -11,15 +11,18 @@ def load_config(config_path):
 
 def setup_logger(log_dir):
     os.makedirs(log_dir, exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(os.path.join(log_dir, 'train.log')),
-            logging.StreamHandler()
-        ]
-    )
-    return logging.getLogger('FastViT-Trainer')
+    logger = logging.getLogger('FastViT-Trainer')
+    logger.setLevel(logging.INFO)
+    # Clear any handlers added by a previous run in the same process
+    logger.handlers.clear()
+    fmt = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    fh = logging.FileHandler(os.path.join(log_dir, 'train.log'))
+    fh.setFormatter(fmt)
+    sh = logging.StreamHandler()
+    sh.setFormatter(fmt)
+    logger.addHandler(fh)
+    logger.addHandler(sh)
+    return logger
 
 def save_checkpoint(state, is_best, checkpoint_dir, filename='checkpoint.pth.tar'):
     os.makedirs(checkpoint_dir, exist_ok=True)
