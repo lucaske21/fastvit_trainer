@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  fastvit_trainer:
+    build: .
+    image: fastvit_trainer:latest
+    container_name: fastvit_training_container
+    volumes:
+      - .:/workspace
+      - ./data:/workspace/data
+      - ./output:/workspace/output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - PYTHONPATH=/workspace
+    command: python3 train.py --config configs/base_config.yaml
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    ports:
+      - "6006:6006" # Tensorboard
