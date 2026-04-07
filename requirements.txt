@@ -8,3 +8,4 @@ scikit-learn
 opencv-python
 pillow
 numpy
+onnx
