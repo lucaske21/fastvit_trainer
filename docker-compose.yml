@@ -26,14 +26,13 @@ services:
     tty: true
 
   tensorboard:
-    image: python:3.8-slim
+    image: hkube/tensorboard:latest
     container_name: fastvit_tensorboard
     depends_on:
       - fastvit_trainer
     volumes:
       - ./output:/workspace/output
     entrypoint: >
-      sh -c "pip install tensorboard --quiet &&
-             tensorboard --logdir /workspace/output --host 0.0.0.0 --port 6006"
+      sh -c "tensorboard --logdir /workspace/output --host 0.0.0.0 --port 6006"
     ports:
       - "6006:6006"
