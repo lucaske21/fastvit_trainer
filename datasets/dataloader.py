@@ -1,24 +1,25 @@
 import os
 from torchvision import datasets
-from timm.data import create_loader, create_transform
+from torch.utils.data import DataLoader
+from timm.data import create_transform
 
 def get_dataloaders(config):
     """
     基於 timm 的數據加載器實現。
-    使用 use_prefetcher=True：transform 管道省略 ToTensor/Normalize，
-    由 create_loader 的 PrefetchLoader（fast_collate + GPU normalize）接管，
-    同時啟用 persistent_workers 消除 epoch 間 worker 重建開銷。
+    使用 torch DataLoader 確保 drop_last / persistent_workers 相容性，
+    搭配 timm create_transform 提供完整的訓練增強管道。
     """
     mean = tuple(config.get('mean', [0.485, 0.456, 0.406]))
     std  = tuple(config.get('std',  [0.229, 0.224, 0.225]))
 
-    # 訓練集：PIL 空間增強，ToTensor/Normalize/RE 移至 GPU PrefetchLoader
     train_transform = create_transform(
         input_size=config['input_size'],
         is_training=True,
-        use_prefetcher=True,
+        use_prefetcher=False,
         no_aug=False,
-        re_prob=0.0,  # RE 交由 PrefetchLoader 在 GPU 執行
+        re_prob=config.get('re_prob', 0.25),
+        re_mode=config.get('re_mode', 'pixel'),
+        re_count=config.get('re_count', 1),
         scale=config.get('scale', (0.08, 1.0)),
         ratio=config.get('ratio', (3./4., 4./3.)),
         hflip=config.get('hflip', 0.5),
@@ -30,11 +31,10 @@ def get_dataloaders(config):
         std=std,
     )
 
-    # 驗證集：僅 Resize + CenterCrop，同樣省略 Normalize
     val_transform = create_transform(
         input_size=config['input_size'],
         is_training=False,
-        use_prefetcher=True,
+        use_prefetcher=False,
         interpolation=config.get('interpolation', 'bicubic'),
         mean=mean,
         std=std,
@@ -49,36 +49,24 @@ def get_dataloaders(config):
         transform=val_transform,
     )
 
-    # create_loader 內部使用 fast_collate（PIL→uint8 tensor）+ PrefetchLoader（GPU normalize）
-    train_loader = create_loader(
+    train_loader = DataLoader(
         train_dataset,
-        input_size=config['input_size'],
         batch_size=config['batch_size'],
-        is_training=True,
-        use_prefetcher=True,
-        mean=mean,
-        std=std,
-        re_prob=config.get('re_prob', 0.25),
-        re_mode=config.get('re_mode', 'pixel'),
-        re_count=config.get('re_count', 1),
+        shuffle=True,
         num_workers=config['num_workers'],
         pin_memory=True,
         drop_last=True,
-        persistent_workers=True,
+        persistent_workers=config['num_workers'] > 0,
     )
 
-    val_loader = create_loader(
+    val_loader = DataLoader(
         val_dataset,
-        input_size=config['input_size'],
         batch_size=config['batch_size'],
-        is_training=False,
-        use_prefetcher=True,
-        mean=mean,
-        std=std,
+        shuffle=False,
         num_workers=config['num_workers'],
         pin_memory=True,
         drop_last=False,
-        persistent_workers=True,
+        persistent_workers=config['num_workers'] > 0,
     )
 
     return train_loader, val_loader, len(train_dataset.classes)
