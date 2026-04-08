@@ -2,6 +2,8 @@ import os
 import torch
 import yaml
 import logging
+import queue
+import threading
 from torch.utils.tensorboard import SummaryWriter
 
 def load_config(config_path):
@@ -29,6 +31,43 @@ def save_checkpoint(state, is_best, checkpoint_dir, filename='checkpoint.pth.tar
     torch.save(state, os.path.join(checkpoint_dir, filename))
     if is_best:
         torch.save(state, os.path.join(checkpoint_dir, 'model_best.pth.tar'))
+
+
+class AsyncCheckpointSaver:
+    """Background checkpoint writer to reduce epoch-end blocking on disk I/O."""
+    def __init__(self, checkpoint_dir, filename='checkpoint.pth.tar', max_queue_size=2):
+        self.checkpoint_dir = checkpoint_dir
+        self.filename = filename
+        self._queue = queue.Queue(maxsize=max_queue_size)
+        self._error = None
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
+
+    def _worker(self):
+        try:
+            while True:
+                item = self._queue.get()
+                if item is None:
+                    self._queue.task_done()
+                    break
+                state, is_best = item
+                save_checkpoint(state, is_best, self.checkpoint_dir, self.filename)
+                self._queue.task_done()
+        except Exception as exc:
+            self._error = exc
+
+    def submit(self, state, is_best):
+        if self._error is not None:
+            raise self._error
+        self._queue.put((state, is_best))
+
+    def close(self):
+        if self._error is not None:
+            raise self._error
+        self._queue.put(None)
+        self._thread.join()
+        if self._error is not None:
+            raise self._error
 
 def get_optimizer_scheduler(model, config):
     """

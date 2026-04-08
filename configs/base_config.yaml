@@ -9,10 +9,13 @@ input_size: [3, 224, 224]
 # Training settings
 epochs: 100
 batch_size: 128
+val_batch_size: 256
 num_workers: 8
 device: 'cuda'
 use_amp: True
 output_dir: './output'
+validate_interval: 5
+checkpoint_interval: 5
 
 # Optimizer settings
 opt: 'adamw'
