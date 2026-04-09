@@ -3,7 +3,7 @@ version: '3.8'
 services:
   fastvit_trainer:
     build: .
-    image: fastvit_trainer:latest
+    image: fastvit_trainer:nvidia-dali
     container_name: fastvit_training_container
     volumes:
       - .:/workspace
@@ -20,6 +20,7 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - PYTHONPATH=/workspace
     command: python3 train.py --config configs/base_config.yaml
+    # command: tail -f /dev/null 
     working_dir: /workspace
     ipc: host
     stdin_open: true
