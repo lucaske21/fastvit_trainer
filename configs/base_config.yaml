@@ -31,6 +31,12 @@ min_lr: 0.00001
 
 # Data settings
 data_dir: './data'
+use_dali: True
+dali_device_id: 0
+dali_decoder_device: 'cpu'
+dali_num_threads: 6
+dali_seed: 42
+val_resize_size: 256
 mean: [0.485, 0.456, 0.406]
 std: [0.229, 0.224, 0.225]
 interpolation: 'bicubic'

@@ -1,6 +1,24 @@
 # Changelog
 
-## [unrelease] - 2026-04-08
+## [Unreleased] - 2026-04-09
+
+### Improved — ONNX 导出能力增强
+
+- **`export_onnx.py` — `opset_version` 可配置**：新增 `--opset-version` 参数，默认保持 `11`，可按部署环境切换到更高 ONNX opset。
+
+- **`export_onnx.py` — 类别数自动匹配 checkpoint**：导出时从 checkpoint 自动推断分类头输出维度，避免 `head.fc` 的 shape mismatch（如训练 9 类、配置为 1000 类时）。
+
+- **`export_onnx.py` — ONNX metadata 写入 class names**：导出后自动写入模型元信息（`model_name`、`num_classes`、`opset_version`、`class_names`）。
+  - `class_names` 支持来源：
+    - `--class-names` 传入逗号分隔字符串
+    - `--class-names` 指向 `.json`（list）或 `.txt`（逐行）文件
+    - 未显式传入时，自动从 `data_dir/train` 子目录推断
+
+- **`export_onnx.py` — 导出流程稳健性改进**：
+  - 导出阶段强制 `pretrained=False`，避免无必要预训练权重下载
+  - `torch.load` 兼容 `weights_only=True`（新版本）与旧版本参数差异
+
+## [Unreleased] - 2026-04-08
 
 ### Improved — GPU 利用率稳定性与 I/O 并行
 
@@ -17,6 +35,7 @@
 - **`utils/utils.py` + `train.py` — 多线程异步 checkpoint 写盘**：新增 `AsyncCheckpointSaver` 后台线程，训练主线程不再每个 epoch 同步阻塞等待磁盘 I/O。
   - 新增 `checkpoint_interval`（默认 5）
   - 在「达到保存间隔 / 产生 best / 最后一个 epoch」时提交异步保存任务
+
 
 ## [Unreleased] - 2026-04-07
 

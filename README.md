@@ -25,6 +25,7 @@ fastvit_trainer/
 - **Flexible Configuration**: All hyperparameters managed through easy-to-read YAML files.
 - **AMP Support**: Automatic Mixed Precision training for faster performance on NVIDIA GPUs.
 - **Dockerized**: Ready-to-use environment with all dependencies pre-installed.
+- **NVIDIA DALI (Optional)**: GPU-side decode/resize/crop pipeline for higher throughput.
 
 ## Getting Started
 
@@ -46,6 +47,9 @@ data/
 # Build the image
 docker build -t fastvit_trainer .
 
+# Build the image with nvidia-dali branch
+docker build -t fastvit_trainer:nvidia-dali .
+
 # Run training via Docker Compose
 docker-compose up
 ```
@@ -54,6 +58,13 @@ docker-compose up
 ```bash
 pip install -r requirements.txt
 ```
+
+#### Enable NVIDIA DALI (Python 3.8)
+Install a DALI wheel that matches your CUDA runtime (DALI 1.38 supports Python 3.8):
+```bash
+pip install nvidia-dali-cuda120==1.38.0
+```
+If your CUDA version is not 12.x, replace `cuda120` with the matching wheel variant.
 
 ### 3. Training
 Modify `configs/base_config.yaml` to suit your needs, then run:
@@ -73,6 +84,8 @@ Key parameters in `configs/base_config.yaml`:
 - `lr`: Learning rate (default: 0.001).
 - `batch_size`: Number of images per GPU batch.
 - `use_amp`: Enable/disable mixed precision training.
+- `use_dali`: Enable NVIDIA DALI dataloader path.
+- `val_resize_size`: Validation resize short side before center crop (default: 256).
 
 ## Acknowledgements
 - [timm](https://github.com/huggingface/pytorch-image-models)
