@@ -9,6 +9,7 @@ opencv-python
 pillow
 numpy
 onnx
+mlflow
 # Optional: DALI acceleration (Python 3.8 supported). Pick the wheel matching your CUDA version.
 # Example for CUDA 12.x:
 nvidia-dali-cuda120==1.38.0
