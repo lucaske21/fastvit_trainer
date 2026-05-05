@@ -6,6 +6,108 @@ import queue
 import threading
 from torch.utils.tensorboard import SummaryWriter
 
+
+def _flatten_config(config, prefix=''):
+    flat_config = {}
+    for key, value in config.items():
+        composed_key = f'{prefix}.{key}' if prefix else str(key)
+        if isinstance(value, dict):
+            flat_config.update(_flatten_config(value, composed_key))
+        else:
+            flat_config[composed_key] = value
+    return flat_config
+
+
+def _stringify_param(value):
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+class MLflowTracker:
+    def __init__(self, config, run_dir, logger, run_name=None, resume_path=None):
+        mlflow_config = config.get('mlflow', {}) or {}
+        self.enabled = bool(mlflow_config.get('enabled', False))
+        self.run_dir = run_dir
+        self.logger = logger
+        self.run_name = run_name
+        self.resume_path = resume_path
+        self.mlflow = None
+        self.active_run = None
+        self.artifact_paths = set()
+        self.log_model = bool(mlflow_config.get('log_model', False))
+        self.log_checkpoints = bool(mlflow_config.get('log_checkpoints', False))
+        self.tags = mlflow_config.get('tags', {}) or {}
+        self.experiment_name = mlflow_config.get('experiment_name', 'fastvit-trainer')
+        self.tracking_uri = mlflow_config.get('tracking_uri')
+
+    def start(self, config):
+        if not self.enabled:
+            return
+
+        try:
+            import mlflow
+        except ImportError as exc:
+            raise ImportError(
+                'MLflow support is enabled in config, but mlflow is not installed. '
+                'Install it with `pip install mlflow` or disable config.mlflow.enabled.'
+            ) from exc
+
+        self.mlflow = mlflow
+
+        if self.tracking_uri:
+            self.mlflow.set_tracking_uri(self.tracking_uri)
+        self.mlflow.set_experiment(self.experiment_name)
+
+        run_kwargs = {}
+        if self.run_name:
+            run_kwargs['run_name'] = self.run_name
+
+        self.active_run = self.mlflow.start_run(**run_kwargs)
+        self.mlflow.set_tag('model_name', config.get('model_name', 'unknown'))
+        self.mlflow.set_tag('run_dir', os.path.abspath(self.run_dir))
+        if self.resume_path:
+            self.mlflow.set_tag('resume_checkpoint', os.path.abspath(self.resume_path))
+        for key, value in self.tags.items():
+            self.mlflow.set_tag(key, value)
+
+        params = {
+            key: _stringify_param(value)
+            for key, value in _flatten_config(config).items()
+            if not key.startswith('mlflow.tags.')
+        }
+        self.mlflow.log_params(params)
+        self.logger.info(
+            'MLflow tracking enabled: experiment=%s, run_id=%s',
+            self.experiment_name,
+            self.active_run.info.run_id,
+        )
+
+    def log_metrics(self, metrics, step):
+        if not self.enabled or self.mlflow is None:
+            return
+        self.mlflow.log_metrics(metrics, step=step)
+
+    def log_artifact(self, path, artifact_path=None):
+        if not self.enabled or self.mlflow is None:
+            return
+        normalized_path = os.path.abspath(path)
+        if not os.path.exists(normalized_path) or normalized_path in self.artifact_paths:
+            return
+        self.mlflow.log_artifact(normalized_path, artifact_path=artifact_path)
+        self.artifact_paths.add(normalized_path)
+
+    def log_model_artifact(self, model):
+        if not self.enabled or self.mlflow is None or not self.log_model:
+            return
+        self.mlflow.pytorch.log_model(model, artifact_path='model')
+
+    def finish(self, status='FINISHED'):
+        if not self.enabled or self.mlflow is None:
+            return
+        self.mlflow.end_run(status=status)
+        self.active_run = None
+
 def load_config(config_path):
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)

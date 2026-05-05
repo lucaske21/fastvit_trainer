@@ -7,7 +7,13 @@ from datetime import datetime
 from datasets.dataloader import get_dataloaders
 from models.builder import create_fastvit_model
 from engine.trainer import Trainer
-from utils.utils import load_config, setup_logger, get_optimizer_scheduler, AsyncCheckpointSaver
+from utils.utils import (
+    load_config,
+    setup_logger,
+    get_optimizer_scheduler,
+    AsyncCheckpointSaver,
+    MLflowTracker,
+)
 from torch.utils.tensorboard import SummaryWriter
 
 
@@ -51,6 +57,7 @@ def main():
     logger = setup_logger(run_dir)
     writer = SummaryWriter(log_dir=os.path.join(run_dir, 'tensorboard'))
     logger.info(f"Run directory: {run_dir}")
+    mlflow_tracker = MLflowTracker(config, run_dir, logger, run_name=args.run_name, resume_path=args.resume)
 
     device = torch.device(config.get('device', 'cuda' if torch.cuda.is_available() else 'cpu'))
     logger.info(f"Using device: {device}")
@@ -90,56 +97,88 @@ def main():
     validate_interval = max(1, int(config.get('validate_interval', 5)))
     checkpoint_interval = max(1, int(config.get('checkpoint_interval', validate_interval)))
 
-    for epoch in range(start_epoch, config['epochs'] + 1):
-        # 訓練一輪
-        train_loss, train_acc1, train_acc5 = trainer.train_one_epoch(train_loader, epoch)
+    status = 'FAILED'
+    try:
+        mlflow_tracker.start(config)
+        mlflow_tracker.log_artifact(os.path.join(run_dir, 'config.yaml'), artifact_path='configs')
 
-        do_validate = (epoch % validate_interval == 0) or (epoch == config['epochs'])
-        if do_validate:
-            val_loss, val_acc1, val_acc5 = trainer.validate(val_loader)
-        else:
-            val_loss, val_acc1, val_acc5 = float('nan'), float('nan'), float('nan')
+        for epoch in range(start_epoch, config['epochs'] + 1):
+            # 訓練一輪
+            train_loss, train_acc1, train_acc5 = trainer.train_one_epoch(train_loader, epoch)
 
-        # 記錄日誌
-        if do_validate:
-            logger.info(
-                f"Epoch {epoch}/{config['epochs']}: "
-                f"Train Loss={train_loss:.4f} Acc@1={train_acc1:.2f}% | "
-                f"Val Loss={val_loss:.4f} Acc@1={val_acc1:.2f}%"
-            )
-        else:
-            logger.info(
-                f"Epoch {epoch}/{config['epochs']}: "
-                f"Train Loss={train_loss:.4f} Acc@1={train_acc1:.2f}% | "
-                f"Val skipped (validate_interval={validate_interval})"
-            )
+            do_validate = (epoch % validate_interval == 0) or (epoch == config['epochs'])
+            if do_validate:
+                val_loss, val_acc1, val_acc5 = trainer.validate(val_loader)
+            else:
+                val_loss, val_acc1, val_acc5 = float('nan'), float('nan'), float('nan')
 
-        # 寫入 Tensorboard
-        writer.add_scalar('Loss/train', train_loss, epoch)
-        if do_validate:
-            writer.add_scalar('Loss/val', val_loss, epoch)
-        writer.add_scalar('Accuracy/train', train_acc1, epoch)
-        if do_validate:
-            writer.add_scalar('Accuracy/val', val_acc1, epoch)
+            # 記錄日誌
+            if do_validate:
+                logger.info(
+                    f"Epoch {epoch}/{config['epochs']}: "
+                    f"Train Loss={train_loss:.4f} Acc@1={train_acc1:.2f}% | "
+                    f"Val Loss={val_loss:.4f} Acc@1={val_acc1:.2f}%"
+                )
+            else:
+                logger.info(
+                    f"Epoch {epoch}/{config['epochs']}: "
+                    f"Train Loss={train_loss:.4f} Acc@1={train_acc1:.2f}% | "
+                    f"Val skipped (validate_interval={validate_interval})"
+                )
 
-        # 保存 Checkpoint
-        is_best = do_validate and (val_acc1 > best_acc1)
-        if do_validate:
-            best_acc1 = max(val_acc1, best_acc1)
+            # 寫入 Tensorboard
+            writer.add_scalar('Loss/train', train_loss, epoch)
+            if do_validate:
+                writer.add_scalar('Loss/val', val_loss, epoch)
+            writer.add_scalar('Accuracy/train', train_acc1, epoch)
+            if do_validate:
+                writer.add_scalar('Accuracy/val', val_acc1, epoch)
 
-        should_save = is_best or (epoch % checkpoint_interval == 0) or (epoch == config['epochs'])
-        if should_save:
-            checkpoint_saver.submit({
-                'epoch': epoch,
-                'model_name': config['model_name'],
-                'state_dict': model.state_dict(),
-                'best_acc1': best_acc1,
-                'optimizer': optimizer.state_dict(),
-                'scheduler': scheduler.state_dict(),
-            }, is_best)
+            current_lr = optimizer.param_groups[0]['lr'] if optimizer.param_groups else 0.0
+            metric_payload = {
+                'train_loss': train_loss,
+                'train_acc1': train_acc1,
+                'train_acc5': train_acc5,
+                'lr': current_lr,
+            }
+            if do_validate:
+                metric_payload.update({
+                    'val_loss': val_loss,
+                    'val_acc1': val_acc1,
+                    'val_acc5': val_acc5,
+                })
+            mlflow_tracker.log_metrics(metric_payload, step=epoch)
 
-    writer.close()
-    checkpoint_saver.close()
+            # 保存 Checkpoint
+            is_best = do_validate and (val_acc1 > best_acc1)
+            if do_validate:
+                best_acc1 = max(val_acc1, best_acc1)
+
+            should_save = is_best or (epoch % checkpoint_interval == 0) or (epoch == config['epochs'])
+            if should_save:
+                checkpoint_state = {
+                    'epoch': epoch,
+                    'model_name': config['model_name'],
+                    'state_dict': model.state_dict(),
+                    'best_acc1': best_acc1,
+                    'optimizer': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict(),
+                }
+                checkpoint_saver.submit(checkpoint_state, is_best)
+
+        mlflow_tracker.log_model_artifact(model)
+        status = 'FINISHED'
+    finally:
+        writer.close()
+        checkpoint_saver.close()
+        if mlflow_tracker.log_checkpoints:
+            for checkpoint_name in sorted(os.listdir(checkpoint_dir)):
+                checkpoint_path = os.path.join(checkpoint_dir, checkpoint_name)
+                if os.path.isfile(checkpoint_path):
+                    mlflow_tracker.log_artifact(checkpoint_path, artifact_path='checkpoints')
+        mlflow_tracker.log_artifact(os.path.join(run_dir, 'train.log'), artifact_path='logs')
+        mlflow_tracker.finish(status=status)
+
     logger.info(f"Training completed. Best Val Acc@1: {best_acc1:.2f}%")
     logger.info(f"Checkpoints saved to: {checkpoint_dir}")
 
