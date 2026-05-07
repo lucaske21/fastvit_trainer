@@ -2,8 +2,7 @@ version: '3.8'
 
 services:
   fastvit_trainer:
-    build: .
-    image: fastvit_trainer:nvidia-dali
+    image: ${IMAGE_NAME}:${APP_TAG}
     container_name: fastvit_training_container
     volumes:
       - .:/workspace
@@ -19,21 +18,21 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - PYTHONPATH=/workspace
-    command: python3 train.py --config configs/base_config.yaml
+    command: ${APP_CMD}
     # command: tail -f /dev/null 
     working_dir: /workspace
     ipc: host
     stdin_open: true
     tty: true
 
-  tensorboard:
-    image: hkube/tensorboard:latest
-    container_name: fastvit_tensorboard
-    depends_on:
-      - fastvit_trainer
-    volumes:
-      - ./output:/workspace/output
-    entrypoint: >
-      sh -c "tensorboard --logdir /workspace/output --host 0.0.0.0 --port 6006"
-    ports:
-      - "6006:6006"
+  # tensorboard:
+  #   image: hkube/tensorboard:latest
+  #   container_name: fastvit_tensorboard
+  #   depends_on:
+  #     - fastvit_trainer
+  #   volumes:
+  #     - ./output:/workspace/output
+  #   entrypoint: >
+  #     sh -c "tensorboard --logdir /workspace/output --host 0.0.0.0 --port 6006"
+  #   ports:
+  #     - "6006:6006"
