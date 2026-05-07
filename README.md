@@ -60,6 +60,45 @@ docker build -t fastvit_trainer:nvidia-dali .
 
 The wrapper starts Docker Compose with `--abort-on-container-exit --exit-code-from fastvit_trainer` and always runs `docker compose down` when the training container finishes.
 
+Docker Compose in this repo also reads variables from `.env` automatically.
+
+Example `.env`:
+
+```dotenv
+APP_TAG=mlflow
+IMAGE_NAME=fastvit_trainer
+APP_CMD="python3 train.py --config configs/base_config_fastvit_sa12.apple_in1k.yaml"
+```
+
+What each variable does:
+
+- `IMAGE_NAME`: Docker image name used by the `fastvit_trainer` service.
+- `APP_TAG`: Docker image tag paired with `IMAGE_NAME`.
+- `APP_CMD`: Training command passed to the container.
+
+Common workflow:
+
+```bash
+# 1. Update .env
+# 2. Start the training stack
+./run_training_stack.sh
+
+# PowerShell
+.\run_training_stack.ps1
+```
+
+For example, to switch configs without editing `docker-compose.yml`, change `APP_CMD` in `.env`:
+
+```dotenv
+APP_CMD="python3 train.py --config configs/base_config.yaml --run-name experiment_a"
+```
+
+You can verify the resolved values with:
+
+```bash
+docker compose config
+```
+
 #### Local Installation
 ```bash
 pip install -r requirements.txt
