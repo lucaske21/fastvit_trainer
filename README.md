@@ -24,6 +24,7 @@ fastvit_trainer/
 - **Advanced Augmentation**: Includes RandAugment, Mixup, Cutmix, and Random Erasing via `timm`.
 - **Flexible Configuration**: All hyperparameters managed through easy-to-read YAML files.
 - **AMP Support**: Automatic Mixed Precision training for faster performance on NVIDIA GPUs.
+- **MLflow Tracking**: Optional experiment tracking for params, metrics, logs, and model artifacts.
 - **Dockerized**: Ready-to-use environment with all dependencies pre-installed.
 - **NVIDIA DALI (Optional)**: GPU-side decode/resize/crop pipeline for higher throughput.
 
@@ -50,9 +51,14 @@ docker build -t fastvit_trainer .
 # Build the image with nvidia-dali branch
 docker build -t fastvit_trainer:nvidia-dali .
 
-# Run training via Docker Compose
-docker-compose up
+# Run training and shut down TensorBoard when training exits
+./run_training_stack.sh
+
+# Windows PowerShell
+.\run_training_stack.ps1
 ```
+
+The wrapper starts Docker Compose with `--abort-on-container-exit --exit-code-from fastvit_trainer` and always runs `docker compose down` when the training container finishes.
 
 #### Local Installation
 ```bash
@@ -86,6 +92,36 @@ Key parameters in `configs/base_config.yaml`:
 - `use_amp`: Enable/disable mixed precision training.
 - `use_dali`: Enable NVIDIA DALI dataloader path.
 - `val_resize_size`: Validation resize short side before center crop (default: 256).
+
+### MLflow
+
+Enable MLflow in the config to track training metadata:
+
+```yaml
+mlflow:
+    enabled: true
+    experiment_name: fastvit-trainer
+    tracking_uri: http://127.0.0.1:5000
+    log_model: true
+    log_checkpoints: false
+    tags:
+        project: fastvit
+        dataset: RealWaste
+```
+
+When enabled, the trainer logs:
+
+- flattened config params
+- per-epoch train and validation metrics
+- the copied run config and `train.log`
+- the final PyTorch model artifact when `log_model: true`
+- checkpoint artifacts when `log_checkpoints: true`
+
+Start a local MLflow server if needed:
+
+```bash
+mlflow server --host 0.0.0.0 --port 5000
+```
 
 ## Acknowledgements
 - [timm](https://github.com/huggingface/pytorch-image-models)
