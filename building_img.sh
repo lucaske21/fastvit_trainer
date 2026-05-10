@@ -1,6 +1,9 @@
 #!/bin/bash
 
 # Build Docker image script
+# Usage: ./building_img.sh [IMAGE_NAME] [IMAGE_TAG] [DOCKERFILE]
+# Sample: ./building_img.sh fastvit_trainer latest Dockerfile
+# Defaults: IMAGE_NAME=fastvit_trainer, IMAGE_TAG=latest, DOCKERFILE
 set -e
 
 IMAGE_NAME="${1:-fastvit_trainer}"
