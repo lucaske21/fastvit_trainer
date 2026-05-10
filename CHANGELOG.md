@@ -4,6 +4,10 @@
 
 ### Improved — ONNX 导出能力增强
 
+- **`export_onnx.py` — 支持 onnx-simplifier 简化导出图**：新增 `--simplify` 参数，导出 ONNX 后可选执行图简化，移除冗余节点与中间结构，以提升部署侧推理效率。
+
+- **`export_onnx.py` — 支持 BatchNorm folding 导出**：`--fold-bn` 现在会先调用模型内部可用的 `reparameterize()` / `reparameterize_model()` 钩子，再对处于 eval 模式的、相邻的 `Conv/Linear + BatchNorm` 组合执行 BN folding，覆盖 FastViT 的重参数化块并进一步减少导出 ONNX 图中的 `BatchNormalization` 节点数量。
+
 - **`export_onnx.py` — `opset_version` 可配置**：新增 `--opset-version` 参数，默认保持 `11`，可按部署环境切换到更高 ONNX opset。
 
 - **`export_onnx.py` — 类别数自动匹配 checkpoint**：导出时从 checkpoint 自动推断分类头输出维度，避免 `head.fc` 的 shape mismatch（如训练 9 类、配置为 1000 类时）。
@@ -17,6 +21,7 @@
 - **`export_onnx.py` — 导出流程稳健性改进**：
   - 导出阶段强制 `pretrained=False`，避免无必要预训练权重下载
   - `torch.load` 兼容 `weights_only=True`（新版本）与旧版本参数差异
+  - 新增 `onnxsim` 依赖以支持导出后图简化
 
 ## [Unreleased] - 2026-04-08
 
