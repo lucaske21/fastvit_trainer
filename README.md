@@ -25,6 +25,7 @@ fastvit_trainer/
 - **Flexible Configuration**: All hyperparameters managed through easy-to-read YAML files.
 - **AMP Support**: Automatic Mixed Precision training for faster performance on NVIDIA GPUs.
 - **MLflow Tracking**: Optional experiment tracking for params, metrics, logs, and model artifacts.
+- **ONNX Export**: Export trained checkpoints to ONNX with dynamic batch axes, metadata, optional BatchNorm folding, and optional graph simplification.
 - **Dockerized**: Ready-to-use environment with all dependencies pre-installed.
 - **NVIDIA DALI (Optional)**: GPU-side decode/resize/crop pipeline for higher throughput.
 
@@ -121,6 +122,32 @@ python train.py --config configs/base_config.yaml
 ```bash
 python infer.py --config configs/base_config.yaml --checkpoint output/model_best.pth.tar --image test.jpg
 ```
+
+### 5. Export to ONNX
+```bash
+python export_onnx.py \
+    --config configs/base_config.yaml \
+    --checkpoint output/model_best.pth.tar \
+    --output output/fastvit.onnx \
+    --fold-bn \
+    --simplify
+```
+
+```bash
+# one line
+python export_onnx.py --config configs/base_config_fastvit_sa12.apple_in1k.yaml --checkpoint output/20260409_073421_fastvit_sa12-apple_in1k/checkpoints/model_best.pth.tar --output output/20260409_073421_fastvit_sa12-apple_in1k/fastvit-nc9-RealWaste-sa12_names_fbn_sim.onnx --fold-bn --simplify --opset-version 17
+```
+
+The ONNX export script supports:
+
+- dynamic batch axes for input and output
+- configurable opset via `--opset-version`
+- automatic `num_classes` inference from the checkpoint head
+- metadata injection for `model_name`, `num_classes`, `opset_version`, and `class_names`
+- optional BatchNorm export prep via `--fold-bn`, which first runs model-specific `reparameterize()` hooks when available and then folds supported adjacent `Conv/Linear + BatchNorm` pairs in eval mode to reduce `BatchNormalization` ops in the exported graph
+- optional graph simplification via `--simplify`, which runs `onnx-simplifier` after export to remove redundant graph structure and reduce inference overhead
+
+For FastViT attention variants, a small number of `BatchNormalization` nodes can still remain after `--fold-bn`. Those layers are typically attention pre-norm blocks rather than foldable `Conv/Linear + BatchNorm` pairs.
 
 ## Configuration
 
