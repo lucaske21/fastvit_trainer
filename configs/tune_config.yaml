@@ -1,0 +1,23 @@
+output_dir: './output/tune'
+
+pruner:
+  n_startup_trials: 3
+  n_warmup_steps: 1
+
+search_space:
+  lr:
+    low: 1.0e-5
+    high: 5.0e-3
+    log: true
+  weight_decay:
+    low: 1.0e-4
+    high: 1.0e-1
+    log: true
+  batch_size:
+    choices: [64, 128, 256]
+  drop_path_rate:
+    low: 0.0
+    high: 0.3
+  warmup_epochs:
+    low: 0
+    high: 10
