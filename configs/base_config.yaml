@@ -7,7 +7,7 @@ drop_path_rate: 0.1
 input_size: [3, 224, 224]
 
 # Training settings
-epochs: 100
+epochs: 20
 batch_size: 128
 val_batch_size: 256
 num_workers: 8
@@ -16,6 +16,15 @@ use_amp: True
 output_dir: './output'
 validate_interval: 5
 checkpoint_interval: 5
+
+# MLflow settings
+mlflow:
+  enabled: true
+  experiment_name: 'fastvit-trainer'
+  tracking_uri: http://192.168.31.6:5000
+  log_model: true
+  log_checkpoints: true
+  tags: {}
 
 # Optimizer settings
 opt: 'adamw'

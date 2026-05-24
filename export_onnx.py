@@ -2,6 +2,8 @@ import argparse
 import json
 import os
 import torch
+from torch import nn
+from torch.nn.utils.fusion import fuse_conv_bn_eval, fuse_linear_bn_eval
 from models.builder import create_fastvit_model
 from utils.utils import load_config
 
@@ -81,6 +83,87 @@ def attach_onnx_metadata(onnx_path, class_names, num_classes, model_name, opset_
 
     onnx.save(model, onnx_path)
 
+
+def simplify_onnx_model(onnx_path):
+    """Simplify an ONNX model in-place using onnx-simplifier."""
+    try:
+        import onnx
+    except ImportError as exc:
+        raise RuntimeError('onnx package is required to simplify ONNX models') from exc
+
+    try:
+        from onnxsim import simplify
+    except ImportError as exc:
+        raise RuntimeError('onnxsim package is required when using --simplify') from exc
+
+    model = onnx.load(onnx_path)
+    simplified_model, check = simplify(model)
+    if not check:
+        raise RuntimeError('onnx-simplifier reported an invalid simplified model')
+
+    onnx.save(simplified_model, onnx_path)
+
+
+def count_batch_norm_layers(module):
+    return sum(1 for child in module.modules() if isinstance(child, nn.modules.batchnorm._BatchNorm))
+
+
+def reparameterize_modules_for_export(module):
+    """Apply model-specific reparameterization hooks before generic BN folding."""
+    if hasattr(module, 'reparameterize_model'):
+        module.reparameterize_model()
+        return 1
+
+    reparameterizable_modules = sorted(
+        (
+            (name, child)
+            for name, child in module.named_modules()
+            if name and hasattr(child, 'reparameterize')
+        ),
+        key=lambda item: item[0].count('.'),
+        reverse=True,
+    )
+
+    for _, child in reparameterizable_modules:
+        child.reparameterize()
+
+    return len(reparameterizable_modules)
+
+
+def _fold_export_pair(parent_module, first_name, second_name):
+    first_module = getattr(parent_module, first_name)
+    second_module = getattr(parent_module, second_name)
+
+    if isinstance(first_module, nn.Conv2d) and isinstance(second_module, nn.BatchNorm2d):
+        setattr(parent_module, first_name, fuse_conv_bn_eval(first_module, second_module))
+        setattr(parent_module, second_name, nn.Identity())
+        return True
+
+    if isinstance(first_module, nn.Linear) and isinstance(second_module, nn.BatchNorm1d):
+        setattr(parent_module, first_name, fuse_linear_bn_eval(first_module, second_module))
+        setattr(parent_module, second_name, nn.Identity())
+        return True
+
+    return False
+
+
+def fold_batch_norms_for_export(module):
+    """Fold supported Conv/Linear + BatchNorm pairs in-place before export."""
+    folded_layers = 0
+    child_names = list(module._modules.keys())
+
+    for index in range(len(child_names) - 1):
+        first_name = child_names[index]
+        second_name = child_names[index + 1]
+        if _fold_export_pair(module, first_name, second_name):
+            folded_layers += 1
+
+    for child in module.children():
+        folded_layers += fold_batch_norms_for_export(child)
+
+    return folded_layers
+
+
 def main():
     parser = argparse.ArgumentParser(description='Export FastViT model to ONNX (opset 11)')
     parser.add_argument('--config', default='configs/base_config.yaml', type=str, help='Path to config file')
@@ -88,9 +171,18 @@ def main():
     parser.add_argument('--output', default='output/fastvit.onnx', type=str, help='Output ONNX file path')
     parser.add_argument('--num-classes', default=None, type=int, help='Override number of classes for model head')
     parser.add_argument('--opset-version', default=11, type=int, help='ONNX opset version (default: 11)')
+    parser.add_argument('--fold-bn', action='store_true',
+                        help='Fold supported Conv/Linear + BatchNorm pairs before ONNX export')
+    parser.add_argument('--simplify', action='store_true',
+                        help='Run onnx-simplifier after export to reduce graph overhead for inference')
     parser.add_argument('--class-names', default=None, type=str,
                         help='Class names source: comma-separated string or path to .json/.txt')
     args = parser.parse_args()
+
+    # print all args with key and values 
+    print("Export configuration:")
+    for key, value in vars(args).items():
+        print(f"  {key}: {value}")
 
     config = load_config(args.config)
     device = torch.device('cpu')
@@ -110,6 +202,20 @@ def main():
     model = create_fastvit_model(export_config, num_classes).to(device)
     model.load_state_dict(state_dict)
     model.eval()
+    if args.fold_bn:
+        bn_before = count_batch_norm_layers(model)
+        reparameterized_modules = reparameterize_modules_for_export(model)
+        folded_layers = fold_batch_norms_for_export(model)
+        bn_after = count_batch_norm_layers(model)
+        if reparameterized_modules:
+            print(f"Reparameterized {reparameterized_modules} module(s) before BN folding.")
+        print(f"Folded {folded_layers} BatchNorm layer(s) before ONNX export.")
+        print(f"BatchNorm layers before/after export prep: {bn_before} -> {bn_after}")
+        if bn_after:
+            print(
+                'Some BatchNorm layers remain after export prep. '
+                'These are not adjacent Conv/Linear -> BatchNorm pairs and may belong to attention pre-norm blocks.'
+            )
 
     c, h, w = config.get('input_size', [3, 224, 224])
     dummy_input = torch.randn(1, c, h, w, device=device)
@@ -129,6 +235,10 @@ def main():
         },
         do_constant_folding=True,
     )
+    if args.simplify:
+        simplify_onnx_model(args.output)
+        print(f"Simplified ONNX model: {args.output}")
+
     attach_onnx_metadata(
         onnx_path=args.output,
         class_names=class_names,

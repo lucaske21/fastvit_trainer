@@ -24,6 +24,8 @@ fastvit_trainer/
 - **Advanced Augmentation**: Includes RandAugment, Mixup, Cutmix, and Random Erasing via `timm`.
 - **Flexible Configuration**: All hyperparameters managed through easy-to-read YAML files.
 - **AMP Support**: Automatic Mixed Precision training for faster performance on NVIDIA GPUs.
+- **MLflow Tracking**: Optional experiment tracking for params, metrics, logs, and model artifacts.
+- **ONNX Export**: Export trained checkpoints to ONNX with dynamic batch axes, metadata, optional BatchNorm folding, and optional graph simplification.
 - **Dockerized**: Ready-to-use environment with all dependencies pre-installed.
 - **NVIDIA DALI (Optional)**: GPU-side decode/resize/crop pipeline for higher throughput.
 
@@ -50,8 +52,52 @@ docker build -t fastvit_trainer .
 # Build the image with nvidia-dali branch
 docker build -t fastvit_trainer:nvidia-dali .
 
-# Run training via Docker Compose
-docker-compose up
+# Run training and shut down TensorBoard when training exits
+./run_training_stack.sh
+
+# Windows PowerShell
+.\run_training_stack.ps1
+```
+
+The wrapper starts Docker Compose with `--abort-on-container-exit --exit-code-from fastvit_trainer` and always runs `docker compose down` when the training container finishes.
+
+Docker Compose in this repo also reads variables from `.env` automatically.
+
+Example `.env`:
+
+```dotenv
+APP_TAG=mlflow
+IMAGE_NAME=fastvit_trainer
+APP_CMD="python3 train.py --config configs/base_config_fastvit_sa12.apple_in1k.yaml"
+```
+
+What each variable does:
+
+- `IMAGE_NAME`: Docker image name used by the `fastvit_trainer` service.
+- `APP_TAG`: Docker image tag paired with `IMAGE_NAME`.
+- `APP_CMD`: Training command passed to the container.
+
+Common workflow:
+
+```bash
+# 1. Update .env
+# 2. Start the training stack
+./run_training_stack.sh
+
+# PowerShell
+.\run_training_stack.ps1
+```
+
+For example, to switch configs without editing `docker-compose.yml`, change `APP_CMD` in `.env`:
+
+```dotenv
+APP_CMD="python3 train.py --config configs/base_config.yaml --run-name experiment_a"
+```
+
+You can verify the resolved values with:
+
+```bash
+docker compose config
 ```
 
 #### Local Installation
@@ -77,6 +123,32 @@ python train.py --config configs/base_config.yaml
 python infer.py --config configs/base_config.yaml --checkpoint output/model_best.pth.tar --image test.jpg
 ```
 
+### 5. Export to ONNX
+```bash
+python export_onnx.py \
+    --config configs/base_config.yaml \
+    --checkpoint output/model_best.pth.tar \
+    --output output/fastvit.onnx \
+    --fold-bn \
+    --simplify
+```
+
+```bash
+# one line
+python export_onnx.py --config configs/base_config_fastvit_sa12.apple_in1k.yaml --checkpoint output/20260409_073421_fastvit_sa12-apple_in1k/checkpoints/model_best.pth.tar --output output/20260409_073421_fastvit_sa12-apple_in1k/fastvit-nc9-RealWaste-sa12_names_fbn_sim.onnx --fold-bn --simplify --opset-version 17
+```
+
+The ONNX export script supports:
+
+- dynamic batch axes for input and output
+- configurable opset via `--opset-version`
+- automatic `num_classes` inference from the checkpoint head
+- metadata injection for `model_name`, `num_classes`, `opset_version`, and `class_names`
+- optional BatchNorm export prep via `--fold-bn`, which first runs model-specific `reparameterize()` hooks when available and then folds supported adjacent `Conv/Linear + BatchNorm` pairs in eval mode to reduce `BatchNormalization` ops in the exported graph
+- optional graph simplification via `--simplify`, which runs `onnx-simplifier` after export to remove redundant graph structure and reduce inference overhead
+
+For FastViT attention variants, a small number of `BatchNormalization` nodes can still remain after `--fold-bn`. Those layers are typically attention pre-norm blocks rather than foldable `Conv/Linear + BatchNorm` pairs.
+
 ## Configuration
 
 Key parameters in `configs/base_config.yaml`:
@@ -86,6 +158,36 @@ Key parameters in `configs/base_config.yaml`:
 - `use_amp`: Enable/disable mixed precision training.
 - `use_dali`: Enable NVIDIA DALI dataloader path.
 - `val_resize_size`: Validation resize short side before center crop (default: 256).
+
+### MLflow
+
+Enable MLflow in the config to track training metadata:
+
+```yaml
+mlflow:
+    enabled: true
+    experiment_name: fastvit-trainer
+    tracking_uri: http://127.0.0.1:5000
+    log_model: true
+    log_checkpoints: false
+    tags:
+        project: fastvit
+        dataset: RealWaste
+```
+
+When enabled, the trainer logs:
+
+- flattened config params
+- per-epoch train and validation metrics
+- the copied run config and `train.log`
+- the final PyTorch model artifact when `log_model: true`
+- checkpoint artifacts when `log_checkpoints: true`
+
+Start a local MLflow server if needed:
+
+```bash
+mlflow server --host 0.0.0.0 --port 5000
+```
 
 ## Acknowledgements
 - [timm](https://github.com/huggingface/pytorch-image-models)
