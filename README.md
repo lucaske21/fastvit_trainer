@@ -6,12 +6,14 @@ A robust training framework for FastViT models using `timm` and `PyTorch`. This 
 
 ```text
 fastvit_trainer/
-├── configs/            # Configuration files (YAML) for training settings
+├── configs/            # Configuration files (YAML) for training and tuning settings
+│   └── tune_config.yaml  # Optuna search space, pruner, and tuning output settings
 ├── datasets/           # Data loading and augmentation logic (timm-based)
 ├── engine/             # Core training and evaluation loops
 ├── models/             # Model builder and architecture wrappers
 ├── utils/              # Utility functions (logging, checkpoints, optimizers)
 ├── train.py            # Main training entry point
+├── tune.py             # Optuna hyperparameter tuning entry point
 ├── infer.py            # Inference script for single images
 ├── Dockerfile          # Docker environment configuration
 ├── docker-compose.yml  # Docker Compose for easy deployment
@@ -25,6 +27,7 @@ fastvit_trainer/
 - **Flexible Configuration**: All hyperparameters managed through easy-to-read YAML files.
 - **AMP Support**: Automatic Mixed Precision training for faster performance on NVIDIA GPUs.
 - **MLflow Tracking**: Optional experiment tracking for params, metrics, logs, and model artifacts.
+- **Optuna Hyperparameter Tuning**: Automated hyperparameter search integrated with `run_training`, with configurable sampler strategy (e.g., TPE, Random) and optimization history visualization support.
 - **ONNX Export**: Export trained checkpoints to ONNX with dynamic batch axes, metadata, optional BatchNorm folding, and optional graph simplification.
 - **Dockerized**: Ready-to-use environment with all dependencies pre-installed.
 - **NVIDIA DALI (Optional)**: GPU-side decode/resize/crop pipeline for higher throughput.
@@ -148,6 +151,32 @@ The ONNX export script supports:
 - optional graph simplification via `--simplify`, which runs `onnx-simplifier` after export to remove redundant graph structure and reduce inference overhead
 
 For FastViT attention variants, a small number of `BatchNormalization` nodes can still remain after `--fold-bn`. Those layers are typically attention pre-norm blocks rather than foldable `Conv/Linear + BatchNorm` pairs.
+
+### 6. Hyperparameter Tuning (Optuna)
+
+Run a minimal tuning session:
+
+```bash
+python tune.py --base-config configs/base_config.yaml --tune-config configs/tune_config.yaml --n-trials 10 --epochs 5
+```
+
+Use a different sampler (example: RandomSampler) and visualize optimization history:
+
+```python
+import optuna
+from optuna.visualization import plot_optimization_history
+
+study = optuna.create_study(
+    study_name="fastvit_tune",
+    storage="sqlite:///output/tune/optuna.db",
+    load_if_exists=True,
+    sampler=optuna.samplers.RandomSampler(),
+    direction="maximize",
+)
+
+fig = plot_optimization_history(study)
+fig.show()
+```
 
 ## Configuration
 
