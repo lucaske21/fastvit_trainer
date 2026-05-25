@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased] - 2026-05-25
+### Added Optuna hyperparameter tuning
+
+- Optuna hyperparameter tuning: Add Optuna-based hyperparameter search integrated with the existing training pipeline, including sampler selection support and optimization history visualization workflow.
+
 ## [Unreleased] - 2026-04-09
 
 ### Improved — ONNX 导出能力增强
