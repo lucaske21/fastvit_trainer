@@ -33,9 +33,7 @@ DOCKERFILE="${3:-Dockerfile}"
 echo "Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}"
 echo "Using Dockerfile: ${DOCKERFILE}"
 
-docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" -f "${DOCKERFILE}" .
-
-if [ $? -eq 0 ]; then
+if docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" -f "${DOCKERFILE}" .; then
     echo "[OK] Docker image built successfully: ${IMAGE_NAME}:${IMAGE_TAG}"
 else
     echo "[ERROR] Docker image build failed"
