@@ -24,6 +24,7 @@ mlflow:
   tracking_uri: http://192.168.31.6:5000
   log_model: true
   log_checkpoints: true
+  system_metrics: false
   tags: {}
 
 # Optimizer settings
