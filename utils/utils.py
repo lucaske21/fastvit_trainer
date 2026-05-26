@@ -41,6 +41,9 @@ class MLflowTracker:
         self.tags = mlflow_config.get('tags', {}) or {}
         self.experiment_name = mlflow_config.get('experiment_name', 'fastvit-trainer')
         self.tracking_uri = mlflow_config.get('tracking_uri')
+        self.register_model = bool(mlflow_config.get('register_model', False))
+        self.registered_model_name = mlflow_config.get('registered_model_name', 'fastvit-model')
+        self.transition_to_staging = bool(mlflow_config.get('transition_to_staging', False))
 
     def start(self, config):
         if not self.enabled:
@@ -105,6 +108,85 @@ class MLflowTracker:
         if not self.enabled or self.mlflow is None or not self.log_model:
             return
         self.mlflow.pytorch.log_model(model, artifact_path='model')
+
+    def register_best_model(self, model, best_metrics=None):
+        """
+        Register the best model to MLflow Model Registry.
+
+        Args:
+            model: The PyTorch model to register
+            best_metrics: Dictionary containing best validation metrics (optional)
+
+        Returns:
+            Dictionary with run_id and model_version, or None if registration is disabled
+        """
+        if not self.enabled or self.mlflow is None or not self.register_model:
+            return None
+
+        if self.active_run is None:
+            self.logger.warning('No active MLflow run. Cannot register model.')
+            return None
+
+        try:
+            # Log the model with registered_model_name to automatically register it
+            model_info = self.mlflow.pytorch.log_model(
+                pytorch_model=model,
+                artifact_path='model',
+                registered_model_name=self.registered_model_name
+            )
+
+            run_id = self.active_run.info.run_id
+
+            # Get the registered model version
+            from mlflow.tracking import MlflowClient
+            client = MlflowClient(tracking_uri=self.tracking_uri)
+
+            # Find the model version that was just registered
+            model_versions = client.search_model_versions(f"name='{self.registered_model_name}'")
+            latest_version = None
+            for mv in model_versions:
+                if mv.run_id == run_id:
+                    latest_version = mv.version
+                    break
+
+            if latest_version is None:
+                self.logger.warning(f'Could not find registered model version for run {run_id}')
+                return {'run_id': run_id, 'model_version': None}
+
+            self.logger.info(
+                f'Model registered to MLflow Model Registry: '
+                f'name={self.registered_model_name}, version={latest_version}, run_id={run_id}'
+            )
+
+            # Optionally transition to Staging
+            if self.transition_to_staging:
+                client.transition_model_version_stage(
+                    name=self.registered_model_name,
+                    version=latest_version,
+                    stage='Staging'
+                )
+                self.logger.info(
+                    f'Model version {latest_version} transitioned to Staging stage'
+                )
+
+            # Log best metrics as tags on the model version
+            if best_metrics:
+                for metric_name, metric_value in best_metrics.items():
+                    try:
+                        client.set_model_version_tag(
+                            name=self.registered_model_name,
+                            version=latest_version,
+                            key=metric_name,
+                            value=str(metric_value)
+                        )
+                    except Exception as tag_exc:
+                        self.logger.warning(f'Failed to set model version tag {metric_name}: {tag_exc}')
+
+            return {'run_id': run_id, 'model_version': latest_version}
+
+        except Exception as exc:
+            self.logger.error(f'Failed to register model to MLflow Model Registry: {exc}')
+            return None
 
     def finish(self, status='FINISHED'):
         if not self.enabled or self.mlflow is None:
