@@ -200,6 +200,9 @@ mlflow:
     log_model: true
     log_checkpoints: false
     system_metrics: false
+    register_model: false
+    registered_model_name: ''   # defaults to the sanitized model_name when empty
+    model_stage: 'Staging'      # set to '' to skip stage transition
     tags:
         project: fastvit
         dataset: RealWaste
@@ -210,8 +213,17 @@ When enabled, the trainer logs:
 - flattened config params
 - per-epoch train and validation metrics
 - the copied run config and `train.log`
-- the final PyTorch model artifact when `log_model: true`
+- the best-checkpoint PyTorch model artifact when `log_model: true`
 - checkpoint artifacts when `log_checkpoints: true`
+
+#### Model Registry
+
+Set `register_model: true` (requires `log_model: true`) to automatically register the best model in the MLflow Model Registry after training:
+
+- The best model weights (highest validation accuracy) are loaded before logging.
+- The model is logged via `mlflow.pytorch.log_model()` with `registered_model_name` set, making it appear in the **Models** page of the MLflow UI.
+- If `model_stage` is set (default `Staging`), the registered version is transitioned to that stage using `MlflowClient`.
+- The run ID and registered model version are printed to the training log for tracking.
 
 #### System Metrics
 

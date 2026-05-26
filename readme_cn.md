@@ -149,6 +149,9 @@ mlflow:
     log_model: true
     log_checkpoints: false
     system_metrics: false
+    register_model: false
+    registered_model_name: ''   # 为空时默认使用经过净化的 model_name
+    model_stage: 'Staging'      # 设为 '' 可跳过阶段转换
     tags:
         project: fastvit
         dataset: RealWaste
@@ -159,8 +162,17 @@ mlflow:
 - 展平后的配置参数
 - 每个 epoch 的训练与验证指标
 - 复制后的运行配置文件和 `train.log`
-- 当 `log_model: true` 时记录最终 PyTorch 模型产物
+- 当 `log_model: true` 时记录最优 checkpoint 的 PyTorch 模型产物
 - 当 `log_checkpoints: true` 时记录 checkpoint 产物
+
+#### 模型注册表
+
+将 `register_model` 设为 `true`（需同时开启 `log_model: true`），可在训练结束后自动将最优模型注册到 MLflow 模型注册表：
+
+- 训练结束时加载验证精度最高的最优模型权重。
+- 通过 `mlflow.pytorch.log_model()` 并设置 `registered_model_name` 参数记录模型，使其出现在 MLflow UI 的 **Models** 页面。
+- 若 `model_stage` 不为空（默认为 `Staging`），将通过 `MlflowClient` 将注册版本转换到对应阶段。
+- 训练日志中会打印 run ID 和已注册的模型版本，方便追踪。
 
 #### 系统指标
 

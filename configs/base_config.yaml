@@ -25,6 +25,9 @@ mlflow:
   log_model: true
   log_checkpoints: true
   system_metrics: false
+  register_model: false
+  registered_model_name: ''
+  model_stage: 'Staging'
   tags: {}
 
 # Optimizer settings

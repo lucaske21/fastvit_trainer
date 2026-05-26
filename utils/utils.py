@@ -41,6 +41,10 @@ class MLflowTracker:
         self.tags = mlflow_config.get('tags', {}) or {}
         self.experiment_name = mlflow_config.get('experiment_name', 'fastvit-trainer')
         self.tracking_uri = mlflow_config.get('tracking_uri')
+        self.register_model = bool(mlflow_config.get('register_model', False))
+        default_reg_name = config.get('model_name', 'fastvit-model').replace('/', '-').replace('.', '-')
+        self.registered_model_name = mlflow_config.get('registered_model_name') or default_reg_name
+        self.model_stage = mlflow_config.get('model_stage', 'Staging') or None
 
     def start(self, config):
         if not self.enabled:
@@ -104,7 +108,34 @@ class MLflowTracker:
     def log_model_artifact(self, model):
         if not self.enabled or self.mlflow is None or not self.log_model:
             return
-        self.mlflow.pytorch.log_model(model, artifact_path='model')
+        log_kwargs = {'artifact_path': 'model'}
+        if self.register_model:
+            log_kwargs['registered_model_name'] = self.registered_model_name
+        self.mlflow.pytorch.log_model(model, **log_kwargs)
+        if self.register_model and self.active_run:
+            run_id = self.active_run.info.run_id
+            try:
+                client = self.mlflow.MlflowClient()
+                versions = client.search_model_versions(
+                    f"name='{self.registered_model_name}' and run_id='{run_id}'"
+                )
+                if versions:
+                    latest = max(versions, key=lambda v: int(v.version))
+                    if self.model_stage:
+                        client.transition_model_version_stage(
+                            name=self.registered_model_name,
+                            version=latest.version,
+                            to_stage=self.model_stage,
+                        )
+                    self.logger.info(
+                        'Model registered: name=%s version=%s stage=%s run_id=%s',
+                        self.registered_model_name,
+                        latest.version,
+                        self.model_stage,
+                        run_id,
+                    )
+            except Exception as exc:
+                self.logger.warning('Model registry step failed: %s', exc)
 
     def finish(self, status='FINISHED'):
         if not self.enabled or self.mlflow is None:
