@@ -184,7 +184,6 @@ def run_training(
                         raise RuntimeError('Optuna is required when using trial-based pruning.') from exc
                     raise optuna.TrialPruned(f'Pruned at epoch {epoch}')
 
-        mlflow_tracker.log_model_artifact(model)
         status = 'FINISHED'
     except RuntimeError as exc:
         if trial is not None and _is_oom_error(exc):
@@ -193,6 +192,15 @@ def run_training(
     finally:
         writer.close()
         checkpoint_saver.close()
+        if status == 'FINISHED':
+            best_ckpt = os.path.join(checkpoint_dir, 'model_best.pth.tar')
+            if os.path.isfile(best_ckpt):
+                try:
+                    ckpt = torch.load(best_ckpt, map_location='cpu')
+                    model.load_state_dict(ckpt['state_dict'])
+                except Exception as exc:
+                    logger.warning('Failed to load best checkpoint for model logging: %s', exc)
+            mlflow_tracker.log_model_artifact(model)
         if mlflow_tracker.log_checkpoints and os.path.isdir(checkpoint_dir):
             for checkpoint_name in sorted(os.listdir(checkpoint_dir)):
                 checkpoint_path = os.path.join(checkpoint_dir, checkpoint_name)
