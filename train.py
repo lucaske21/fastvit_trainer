@@ -185,6 +185,31 @@ def run_training(
                     raise optuna.TrialPruned(f'Pruned at epoch {epoch}')
 
         mlflow_tracker.log_model_artifact(model)
+
+        # Register the best model to MLflow Model Registry
+        best_checkpoint_path = os.path.join(checkpoint_dir, 'model_best.pth.tar')
+        if os.path.isfile(best_checkpoint_path):
+            logger.info(f'Loading best checkpoint for model registration: {best_checkpoint_path}')
+            best_checkpoint = torch.load(best_checkpoint_path, map_location=device)
+            model.load_state_dict(best_checkpoint['state_dict'])
+
+            best_metrics = {
+                'best_val_acc1': best_acc1,
+                'best_val_acc5': best_acc5,
+                'best_val_loss': best_val_loss if best_val_loss != float('inf') else float('nan'),
+                'best_epoch': best_epoch,
+            }
+
+            registration_info = mlflow_tracker.register_best_model(model, best_metrics=best_metrics)
+            if registration_info:
+                logger.info(
+                    f"Model registration complete: "
+                    f"run_id={registration_info['run_id']}, "
+                    f"version={registration_info['model_version']}"
+                )
+        else:
+            logger.warning(f'Best checkpoint not found at {best_checkpoint_path}, skipping model registration')
+
         status = 'FINISHED'
     except RuntimeError as exc:
         if trial is not None and _is_oom_error(exc):
@@ -201,10 +226,18 @@ def run_training(
         train_log_path = os.path.join(run_dir, 'train.log')
         if os.path.isfile(train_log_path):
             mlflow_tracker.log_artifact(train_log_path, artifact_path='logs')
+
+        # Capture run_id before finishing the run
+        run_id = None
+        if mlflow_tracker.enabled and mlflow_tracker.active_run:
+            run_id = mlflow_tracker.active_run.info.run_id
+
         mlflow_tracker.finish(status=status)
 
     logger.info(f"Training completed. Best Val Acc@1: {best_acc1:.2f}%")
     logger.info(f"Checkpoints saved to: {checkpoint_dir}")
+    if run_id:
+        logger.info(f"MLflow Run ID: {run_id}")
 
     return {
         'best_acc1': float(best_acc1),

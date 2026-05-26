@@ -26,6 +26,10 @@ mlflow:
   log_checkpoints: true
   system_metrics: false
   tags: {}
+  # Model Registry settings
+  register_model: true
+  registered_model_name: 'fastvit-model'
+  transition_to_staging: false
 
 # Optimizer settings
 opt: 'adamw'
