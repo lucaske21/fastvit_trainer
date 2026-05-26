@@ -37,6 +37,7 @@ class MLflowTracker:
         self.artifact_paths = set()
         self.log_model = bool(mlflow_config.get('log_model', False))
         self.log_checkpoints = bool(mlflow_config.get('log_checkpoints', False))
+        self.system_metrics = bool(mlflow_config.get('system_metrics', False))
         self.tags = mlflow_config.get('tags', {}) or {}
         self.experiment_name = mlflow_config.get('experiment_name', 'fastvit-trainer')
         self.tracking_uri = mlflow_config.get('tracking_uri')
@@ -54,6 +55,9 @@ class MLflowTracker:
             ) from exc
 
         self.mlflow = mlflow
+
+        if self.system_metrics:
+            self.mlflow.enable_system_metrics_logging()
 
         if self.tracking_uri:
             self.mlflow.set_tracking_uri(self.tracking_uri)

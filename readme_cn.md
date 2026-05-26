@@ -148,6 +148,7 @@ mlflow:
     tracking_uri: http://127.0.0.1:5000
     log_model: true
     log_checkpoints: false
+    system_metrics: false
     tags:
         project: fastvit
         dataset: RealWaste
@@ -160,6 +161,18 @@ mlflow:
 - 复制后的运行配置文件和 `train.log`
 - 当 `log_model: true` 时记录最终 PyTorch 模型产物
 - 当 `log_checkpoints: true` 时记录 checkpoint 产物
+
+#### 系统指标
+
+设置 `system_metrics: true` 可通过 MLflow 系统指标功能自动追踪训练期间的硬件资源利用情况，包括：
+
+- CPU 利用率
+- 内存使用量
+- GPU 利用率与显存占用
+- GPU 功耗与温度
+- 磁盘使用量与网络 I/O
+
+GPU 指标需要安装 `pynvml` 包及 NVIDIA 驱动。系统指标将以 `system/cpu_utilization_percentage`、`system/system_memory_usage_megabytes`、`system/gpu_utilization_percentage` 等形式记录，并可在 MLflow UI 中与训练指标一同查看。
 
 如有需要，可通过以下命令启动本地 MLflow 服务：
 

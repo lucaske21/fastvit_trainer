@@ -199,6 +199,7 @@ mlflow:
     tracking_uri: http://127.0.0.1:5000
     log_model: true
     log_checkpoints: false
+    system_metrics: false
     tags:
         project: fastvit
         dataset: RealWaste
@@ -211,6 +212,18 @@ When enabled, the trainer logs:
 - the copied run config and `train.log`
 - the final PyTorch model artifact when `log_model: true`
 - checkpoint artifacts when `log_checkpoints: true`
+
+#### System Metrics
+
+Set `system_metrics: true` to automatically track hardware resource utilization during training via MLflow System Metrics. This enables monitoring of:
+
+- CPU utilization
+- RAM usage
+- GPU utilization and memory consumption
+- GPU power and temperature
+- Disk usage and network I/O
+
+GPU metrics require the `pynvml` package and NVIDIA drivers. System metrics are logged as `system/cpu_utilization_percentage`, `system/system_memory_usage_megabytes`, `system/gpu_utilization_percentage`, etc., and are viewable in the MLflow UI alongside training metrics.
 
 Start a local MLflow server if needed:
 
